@@ -1,4 +1,4 @@
-three.js-particles-effects
+three.js-particle-effects
 ==========================
 
-Collection of Three.js particles effects
+Collection of Three.js particle effects
