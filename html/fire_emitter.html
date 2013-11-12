@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>Three.js WebGL - Fire particle Emitter</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body {
+				background-color: #000000;
+				margin: 0px;
+				overflow: hidden;
+				font-family:Monospace;
+				font-size:13px;
+				text-align:center;
+				font-weight: bold;
+				text-align:center;
+			}
+
+			a {
+				color:#0078ff;
+			}
+
+			#info {
+				color: #fff;
+				position: absolute;
+				top: 0px; width: 100%;
+				padding: 5px;
+				z-index: 100;
+			}
+
+		</style>
+	</head>
+	<body>
+
+		<div id="info">
+			<a href="http://threejs.org" target="_blank">Three.js</a> - WebGL - Fire particle Emitter by - <a href="http://infogroupindia.com" target="_blank">Nidin</a>
+		</div>
+		<script src="js/three.min.js"></script>
+		<script src="js/libs/tween.min.js"></script>
+		<script src="js/Sparks.js"></script>
+		<script src="js/Detector.js"></script>
+		<script src="js/libs/stats.min.js"></script>
+		
+		<!-- WebGL Shaders -->
+		<script type="x-shader/x-vertex" id="vertexshader">
+			attribute float size;
+			attribute float rotation;
+			attribute float alpha;
+			
+			varying float vRotation;
+			varying float vAlpha;
+			varying float vPointSize;
+			
+			void main() {
+				vRotation = rotation;
+				vAlpha = alpha;
+				
+				vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
+				gl_PointSize = size * ( 300.0 / length( mvPosition.xyz ) );
+				gl_Position = projectionMatrix * mvPosition;
+				vPointSize = gl_PointSize;
+			}
+		</script>
+		
+		<script type="x-shader/x-fragment" id="fragmentshader">
+		
+			uniform sampler2D texture;
+			
+			varying float vRotation;
+			varying float vPointSize;
+			varying float vAlpha;
+			
+			void main() {
+				float mid = 0.5;
+				vec2 rotated = vec2(cos(vRotation) * (gl_PointCoord.x - mid) + sin(vRotation) * (gl_PointCoord.y - mid) + mid,
+									cos(vRotation) * (gl_PointCoord.y - mid) - sin(vRotation) * (gl_PointCoord.x - mid) + mid);
+				vec4 rotatedTexture = texture2D( texture,  rotated);
+				gl_FragColor = vec4(rotatedTexture.rgb,vAlpha);
+			}
+		</script>
+		
+		<script>
+			if ( ! Detector.webgl ) Detector.addGetWebGLMessage();
+			var container, stats;
+			var camera, scene, renderer, particles, geometry, materials = [], parameters, i, h, color;
+			var mouseX = 0, mouseY = 0;
+			
+			var delta = 1, clock = new THREE.Clock();
+			var speed = 50;
+			
+			var theta = 0;
+			var new_pos=0;
+			
+			var windowHalfX = window.innerWidth / 2;
+			var windowHalfY = window.innerHeight / 2;
+			
+			init();
+			animate();
+
+			function init() {
+				
+				container = document.createElement( 'div' );
+				document.body.appendChild( container );
+				
+				camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 1, 3000 );
+				camera.position.z = 1000;
+				
+				scene = new THREE.Scene();
+				
+				var sprite1 = THREE.ImageUtils.loadTexture( "./assets/textures/particles/fire1.png" );
+				
+				var particlesLength = 100;
+				var particles = new THREE.Geometry();
+				
+				var Pool = {
+					__pools: [],
+					// Get a new Vector
+					get: function() {
+						if ( this.__pools.length > 0 ) {
+							return this.__pools.pop();
+						}
+						console.log( "pool ran out!" )
+						return null;
+					},
+					// Release a vector back into the pool
+					add: function( v ) {
+						this.__pools.push( v );
+					}
+				};
+				
+				function newpos( x, y, z ) {
+					return new THREE.Vector3( x, y, z );
+				}
+				
+				for ( i = 0; i < particlesLength; i ++ ) {
+					particles.vertices.push( newpos( Math.random() * 2000 - 100, Math.random() * 1000 + 150, Math.random() * 500 ) );
+					Pool.add( i );
+				}
+				
+				uniforms = {
+					texture:   { type: "t", value: sprite1 }
+				};
+				attributes = {
+					size:  { type: 'f', value: [] },
+					rotation: { type: 'f', value: [] },
+					alpha: { type: 'f', value: [] }
+				};
+				
+				var shaderMaterial = new THREE.ShaderMaterial( {
+					uniforms: uniforms,
+					attributes: attributes,
+					vertexShader: document.getElementById( 'vertexshader' ).textContent,
+					fragmentShader: document.getElementById( 'fragmentshader' ).textContent,
+					blending: THREE.AdditiveBlending,
+					depthWrite: false,
+					transparent: true
+				});
+
+				particleCloud = new THREE.ParticleSystem( particles,  shaderMaterial );
+				particleCloud.dynamic = true;
+				var vertices = particleCloud.geometry.vertices;
+				var values_size = attributes.size.value;
+				var values_rotation = attributes.rotation.value;
+				var values_alpha = attributes.alpha.value;
+				
+				for( var v = 0; v < vertices.length; v ++ ) {
+					values_size[ v ] = 1000 + (Math.random() * 100);
+					values_rotation[ v ] = Math.random() * 360;
+					values_alpha[ v ] = 0;
+				}
+				
+				scene.add(particleCloud);
+				
+				var hue = 0;
+				var timeOnShapePath = 0;
+				
+				var setTargetParticle = function() {
+					var target = Pool.get();
+					return target;
+				};
+				//Sparks emitter start
+				var onParticleCreated = function( p ) {
+					var position = p.position;
+					var target = p.target;
+					position.x = mouseX;
+					position.y = -(mouseY + 128);
+					particles.vertices[ target ] = position;
+				};
+				
+				var onParticleUpdate = function( p ) {
+					var position = p.position;
+					values_alpha[ p.target ] = (2 - p.age)/6;
+				};
+				
+				var onParticleDead = function( particle ) {
+				
+					var target = particle.target;
+					
+					if ( target ) {
+						particles.vertices[ target ].set( Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY );
+						Pool.add( particle.target );
+					}
+				};
+				
+				sparksEmitter = new SPARKS.Emitter( new SPARKS.SteadyCounter( 30 ) );
+				
+				emitterpos = new THREE.Vector3( 0, 0, 0 );
+				
+				sparksEmitter.addInitializer( new SPARKS.Position( new SPARKS.PointZone( emitterpos ) ) );
+				sparksEmitter.addInitializer( new SPARKS.Lifetime( 1	, 2 ));
+				sparksEmitter.addInitializer( new SPARKS.Target( null, setTargetParticle ) );
+				sparksEmitter.addInitializer( new SPARKS.Velocity( new SPARKS.PointZone( new THREE.Vector3( 0, 200, 10) ) ) );
+				// TOTRY Set velocity to move away from centroid
+				
+				sparksEmitter.addAction( new SPARKS.Age() );
+				sparksEmitter.addAction( new SPARKS.Accelerate( 5, 100, 5) );
+				sparksEmitter.addAction( new SPARKS.Move() );
+				sparksEmitter.addAction( new SPARKS.RandomDrift( 30, 10, 30) );
+				
+				sparksEmitter.addCallback( "created", onParticleCreated );
+				sparksEmitter.addCallback( "dead", onParticleDead );
+				sparksEmitter.addCallback( "updated", onParticleUpdate);
+				sparksEmitter.start();
+				//Sparks emitter end
+				
+				renderer = new THREE.WebGLRenderer();
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				container.appendChild( renderer.domElement );
+				
+				stats = new Stats();
+				stats.domElement.style.position = 'absolute';
+				stats.domElement.style.top = '0px';
+				container.appendChild( stats.domElement );
+				
+				document.addEventListener( 'mousemove', onDocumentMouseMove, false );
+				document.addEventListener( 'touchstart', onDocumentTouchStart, false );
+				document.addEventListener( 'touchmove', onDocumentTouchMove, false );
+				
+				window.addEventListener( 'resize', onWindowResize, false );
+			}
+			
+			function onWindowResize() {
+				windowHalfX = window.innerWidth / 2;
+				windowHalfY = window.innerHeight / 2;
+				
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+				
+				renderer.setSize( window.innerWidth, window.innerHeight );
+			}
+
+			function onDocumentMouseMove( event ) {
+				mouseX = event.clientX - windowHalfX;
+				mouseY = event.clientY - windowHalfY;
+			}
+
+			function onDocumentTouchStart( event ) {
+				if ( event.touches.length === 1 ) {
+					event.preventDefault();
+					mouseX = event.touches[ 0 ].pageX - windowHalfX;
+					mouseY = event.touches[ 0 ].pageY - windowHalfY;
+				}
+			}
+			function onDocumentTouchMove( event ) {
+				if ( event.touches.length === 1 ) {
+					event.preventDefault();
+					mouseX = event.touches[ 0 ].pageX - windowHalfX;
+					mouseY = event.touches[ 0 ].pageY - windowHalfY;
+				}
+			}
+			//
+			function animate() {
+				requestAnimationFrame( animate );
+				render();
+				stats.update();
+			}
+			
+			
+			function render() {
+				var time = Date.now() * 0.00005;
+				
+				delta = speed * clock.getDelta();
+				camera.lookAt( scene.position );
+
+				particleCloud.geometry.verticesNeedUpdate = true;
+				
+				attributes.size.needsUpdate = true;
+				attributes.rotation.needsUpdate = true;
+				attributes.alpha.needsUpdate = true;
+
+				renderer.clear();
+				renderer.render( scene, camera );
+			}
+
+
+		</script>
+	</body>
+</html>
